@@ -1,8 +1,9 @@
 ## 1. Generation using implemented email APIs (Auto method, but less stable)
-> If you use --email-api tempmail, it is required that the cloudflare captcha be solved within 10s after the page loads.
-> Otherwise, an infinite loop is possible. Also, don't touch, close anything and in windows except for the Captcha button
+> If you use ```--email-api tempmail``` or ```--email-api hi2in```, you need to have the cloudflare captcha solved!
+> Then you need to press Enter after you see the email site, without fail (**[INPT]** console message type)!
 
-**P.S. ```--email-api tempmail``` doesn't work on windows 7 because api requests are not handled properly on that OC!!!**
+> Also, if you see a message like **[INPT]** in the console, it means that you need to do keyboard input into the console!
+
 <details>
   <summary>Example generation through --email-api tempmail</summary>
   
@@ -19,7 +20,7 @@
   python main.py --chrome --account
   ```
   ```
-  ESET-KeyGen_v1.4.2.0_win64.exe --chrome --account
+  ESET-KeyGen_v1.4.4.0_win64.exe --chrome --account
   ```
   > File name is unique for each version! Do not copy the above command. This is an example!
 
@@ -37,7 +38,7 @@
   python main.py --chrome --business-account
   ```
   ```
-  ESET-KeyGen_v1.4.2.0_win64.exe --chrome --business-account
+  ESET-KeyGen_v1.4.4.0_win64.exe --chrome --business-account
   ```
   > File name is unique for each version! Do not copy the above command. This is an example!
   
@@ -61,7 +62,7 @@
   python main.py --chrome --account --custom-email-api
   ```
   ```
-  ESET-KeyGen_v1.4.2.0_win64.exe --chrome --account --custom-email-api
+  ESET-KeyGen_v1.4.4.0_win64.exe --chrome --account --custom-email-api
   ```
   > File name is unique for each version! Do not copy the above command. This is an example!
 
@@ -92,7 +93,7 @@
   python main.py --chrome --business-account --custom-email-api
   ```
   ```
-  ESET-KeyGen_v1.4.2.0_win64.exe --chrome --business-account --custom-email-api
+  ESET-KeyGen_v1.4.4.0_win64.exe --chrome --business-account --custom-email-api
   ```
   > File name is unique for each version! Do not copy the above command. This is an example!
 
