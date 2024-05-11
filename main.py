@@ -2,8 +2,6 @@ from selenium.webdriver import Chrome, ChromeOptions, ChromeService
 from selenium.webdriver import Firefox, FirefoxOptions, FirefoxService
 from selenium.webdriver import Edge, EdgeOptions, EdgeService
 
-from pyperclip import paste as get_clipboard_text
-
 import subprocess
 import traceback
 import platform
@@ -11,9 +9,15 @@ import datetime
 import argparse
 import requests
 import zipfile
+import tarfile
 import shutil
 import random
 import string
+
+import email
+import email.parser
+from email import policy
+
 import time
 import sys
 import os
@@ -26,7 +30,7 @@ LOGO = """
 ██╔══╝  ╚════██║██╔══╝     ██║      ██╔═██╗ ██╔══╝    ╚██╔╝  ██║   ██║██╔══╝  ██║╚██╗██║   
 ███████╗███████║███████╗   ██║      ██║  ██╗███████╗   ██║   ╚██████╔╝███████╗██║ ╚████║   
 ╚══════╝╚══════╝╚══════╝   ╚═╝      ╚═╝  ╚═╝╚══════╝   ╚═╝    ╚═════╝ ╚══════╝╚═╝  ╚═══╝                                                                      
-                                                Project Version: v1.4.4.1
+                                                Project Version: v1.4.7.1
                                                 Project Devs: rzc0d3r, AdityaGarg8, k0re,
                                                               Fasjeit, alejanpa17, Ischunddu,
                                                               soladify, AngryBonk, Xoncia
@@ -61,6 +65,26 @@ DEFINE_PARSE_10MINUTEMAIL_INBOX_FUNCTION = """function parse_10minutemail_inbox(
         let subject = mails[i].children[1].innerText
         inbox.push([id, from, subject]) }
     return inbox }"""
+PARSE_GUERRILLAMAIL_INBOX = """
+var email_list = document.getElementById('email_list').children
+var inbox = []
+for(var i=0; i < email_list.length-1; i++) {
+    var mail = email_list[i].children
+    var from = mail[1].innerText
+    var subject = mail[2].innerText
+    var mail_id = mail[0].children[0].value
+    inbox.push([mail_id, from, subject])
+}
+return inbox
+"""
+GET_GUERRILLAMAIL_DOMAINS = """
+var domains_options = document.getElementById('gm-host-select').options
+var domains = [] 
+for(var i=0; i < domains_options.length-1; i++) {
+    domains.push(domains_options[i].value)
+}
+return domains
+"""
 
 from colorama import Fore, Style, init
 
@@ -142,6 +166,46 @@ class SecEmailAPI(object):
             raise RuntimeError('SecEmailAPI: API access error!')
         return r.json()
 
+class DeveloperMailAPI(object):
+    def __init__(self):
+        self.email = ''
+        self.email_name = ''
+        self.headers = {}
+        self.api_url = 'https://www.developermail.com/api/v1'
+    
+    def init(self):
+        r = requests.put(f'{self.api_url}/mailbox')
+        self.email_name, token = list(r.json()['result'].values())
+        self.email = self.email_name+'@developermail.com'
+        self.headers = {'X-MailboxToken': token}
+
+    def __parse_message(self, raw_message_body):
+        message_bytes = raw_message_body.encode('utf-8')
+        msg = email.parser.BytesParser(policy=policy.default).parsebytes(message_bytes)
+        message_subject = msg['subject']
+        message_from = msg['from']
+        message_body = str(msg.get_payload(decode=True).decode(msg.get_content_charset())) # decoding MIME-Type to html
+        return {'subject':message_subject, 'from':message_from, 'body':message_body}
+
+    def get_messages(self):
+        # get message IDs
+        r = requests.get(
+            f'{self.api_url}/mailbox/{self.email_name}',
+            headers=self.headers
+        )
+        message_ids = r.json()['result']
+        if message_ids == []:
+            return None
+        # parse messages
+        messages = []
+        for message_id in message_ids:
+            r = requests.get(f'{self.api_url}/mailbox/{self.email_name}/messages/{message_id}', headers=self.headers)
+            raw_message_body = r.json()['result']
+            messages.append(self.__parse_message(raw_message_body))
+        if messages == []:
+            messages = None
+        return messages
+
 class Hi2inAPI(object):
     def __init__(self, driver: Chrome):
         self.driver = driver
@@ -149,13 +213,26 @@ class Hi2inAPI(object):
         self.window_handle = None
     
     def init(self):
-        self.driver.execute_script('window.open("https://hi2.in/#/", "_blank")')
-        console_log(f'{Fore.CYAN}Solve the cloudflare captcha on the page manually!!!{Fore.RESET}', INFO, False)
-        input(f'[  {Fore.YELLOW}INPT{Fore.RESET}  ] {Fore.CYAN}Press Enter when you see the hi2in page...{Fore.RESET}')
-        self.driver.switch_to.window(self.driver.window_handles[0])
-        self.driver.close()
-        self.driver.switch_to.window(self.driver.window_handles[0])
+        #self.driver.execute_script('window.open("https://hi2.in/#/", "_blank")')
+        #if args['try_auto_cloudflare']:
+        #    console_log(f'Attempting to pass cloudflare captcha automatically...', INFO)
+        #    time.sleep(8)
+        #else:
+        #    console_log(f'{Fore.CYAN}Solve the cloudflare captcha on the page manually!!!{Fore.RESET}', INFO, False)
+        #    input(f'[  {Fore.YELLOW}INPT{Fore.RESET}  ] {Fore.CYAN}Press Enter when you see the hi2in page...{Fore.RESET}')
+        #self.driver.switch_to.window(self.driver.window_handles[0])
+        #self.driver.close()
+        #self.driver.switch_to.window(self.driver.window_handles[0])
+        self.driver.get("https://hi2.in/#/")
         self.window_handle = self.driver.current_window_handle
+        #if args['try_auto_cloudflare']:
+        #    try:
+        #        self.driver.execute_script(f'{GET_EBCN}("mailtext mailtextfix")[0]')
+        #        console_log('Successfully passed сloudflare captcha in automatic mode!!!', OK)
+        #    except:
+        #        console_log('Failed to pass сloudflare captcha in automatic mode!!!', ERROR)
+        #        time.sleep(3) # exit-delay
+        #        sys.exit(-1)
         SharedTools.untilConditionExecute(
             self.driver,
             f'return ({GET_EBCN}("mailtext mailtextfix")[0] !== null && {GET_EBCN}("mailtext mailtextfix")[0].value !== "")'
@@ -182,9 +259,8 @@ class TenMinuteMailAPI(object):
     def init(self):     
         self.driver.get('https://10minutemail.net/new.html?lang=en')
         self.window_handle = self.driver.current_window_handle
-        SharedTools.untilConditionExecute(self.driver, f'return {CLICK_WITH_BOOL}({GET_EBCN}("fc-button fc-cta-consent fc-primary-button")[0])')
-        SharedTools.untilConditionExecute(self.driver, f'return fe_text !== null')
-        self.email = self.driver.execute_script('return fe_text.value')
+        SharedTools.untilConditionExecute(self.driver, f'return {GET_EBID}("fe_text") != null')
+        self.email = self.driver.execute_script(f'return {GET_EBID}("fe_text").value')
     
     def parse_inbox(self):
         self.driver.switch_to.window(self.window_handle)
@@ -196,6 +272,30 @@ class TenMinuteMailAPI(object):
         self.driver.switch_to.window(self.window_handle)
         self.driver.get(id)
 
+class GuerRillaMailAPI(object):
+    def __init__(self, driver: Chrome):
+        self.driver = driver
+        self.email = None
+        self.window_handle = None
+
+    def init(self):     
+        self.driver.get('https://www.guerrillamail.com/')
+        self.window_handle = self.driver.current_window_handle
+        SharedTools.untilConditionExecute(self.driver, f'return {GET_EBID}("email-widget") != null')
+        self.email = self.driver.execute_script(f'return {GET_EBID}("email-widget").innerText')
+        # change to random available domain
+        self.email = self.email.split('@')[0]+'@'+random.choice(self.driver.execute_script(GET_GUERRILLAMAIL_DOMAINS))
+    
+    def parse_inbox(self):
+        self.driver.switch_to.window(self.window_handle)
+        self.driver.get('https://www.guerrillamail.com/')
+        inbox = self.driver.execute_script(PARSE_GUERRILLAMAIL_INBOX)
+        return inbox
+
+    def open_mail(self, id):
+        self.driver.switch_to.window(self.window_handle)
+        self.driver.get(f'https://www.guerrillamail.com/inbox?mail_id={id}')
+
 class TempMailAPI(object):
     def __init__(self, driver=None):
         self.driver = driver
@@ -205,21 +305,31 @@ class TempMailAPI(object):
 
     def init(self):
         self.driver.execute_script('window.open("https://temp-mail.org", "_blank")')
-        console_log(f'{Fore.CYAN}Solve the cloudflare captcha on the page manually!!!{Fore.RESET}', INFO, False)
-        input(f'[  {Fore.YELLOW}INPT{Fore.RESET}  ] {Fore.CYAN}Press Enter when you see the TempMail page...{Fore.RESET}')
+        if args['try_auto_cloudflare']:
+            console_log(f'Attempting to pass cloudflare captcha automatically...', INFO)
+            time.sleep(8)
+        else:
+            console_log(f'{Fore.CYAN}Solve the cloudflare captcha on the page manually!!!{Fore.RESET}', INFO, False)
+            input(f'[  {Fore.YELLOW}INPT{Fore.RESET}  ] {Fore.CYAN}Press Enter when you see the TempMail page...{Fore.RESET}')
         self.driver.switch_to.window(self.driver.window_handles[0])
         self.driver.close()
         self.driver.switch_to.window(self.driver.window_handles[0])
         self.window_handle = self.driver.current_window_handle
-        self.driver: Chrome
-        for _ in range(DEFAULT_MAX_ITER//2):
-            copy_email_address_button = self.driver.find_element('xpath', "//button[starts-with(@data-clipboard-target, '#mail')]")
-            if copy_email_address_button.is_enabled():
-                copy_email_address_button.click()
-                self.email = get_clipboard_text()
-                return True
+        if args['try_auto_cloudflare']:
+            try:
+                self.driver.execute_script(f"return {GET_EBID}('mail').value")
+                console_log('Successfully passed сloudflare captcha in automatic mode!!!', OK)
+            except:
+                console_log('Failed to pass сloudflare captcha in automatic mode!!!', ERROR)
+                time.sleep(3) # exit-delay
+                sys.exit(-1)
+        for _ in range(DEFAULT_MAX_ITER):
+            self.email = self.driver.execute_script(f"return {GET_EBID}('mail').value")
+            if self.email == '':
+                raise RuntimeError('TempMailAPI: Your IP is blocked, try again later or try use VPN!')
+            elif self.email.find('@') != -1:
+                break
             time.sleep(DEFAULT_DELAY)
-        raise RuntimeError('TempMailAPI: Your IP is blocked, try again later or try use VPN!')
     
     def auth(self):
         if self.token != "":
@@ -293,11 +403,11 @@ class SharedTools(object):
     def initSeleniumWebDriver(browser_name: str, webdriver_path = None, browser_path = '', headless=True):
         if os.name == 'posix': # For Linux
             if sys.platform.startswith('linux'):
-                console_log('Initializing chrome-webdriver for Linux', INFO)
+                console_log(f'Initializing {browser_name}-webdriver for Linux', INFO)
             elif sys.platform == "darwin":
-                console_log('Initializing chrome-webdriver for macOS', INFO)
+                console_log(f'Initializing {browser_name}-webdriver for macOS', INFO)
         elif os.name == 'nt':
-            console_log('Initializing chrome-webdriver for Windows', INFO)
+            console_log(f'Initializing {browser_name}-webdriver for Windows', INFO)
         driver_options = None
         driver = None
         if browser_name.lower() == 'chrome':
@@ -311,7 +421,18 @@ class SharedTools(object):
             if os.name == 'posix': # For Linux
                 driver_options.add_argument('--no-sandbox')
                 driver_options.add_argument('--disable-dev-shm-usage')
-            driver = Chrome(options=driver_options, service=ChromeService(executable_path=webdriver_path))
+            try:
+                driver = Chrome(options=driver_options, service=ChromeService(executable_path=webdriver_path))
+            except Exception as E:
+                if traceback.format_exc().find('only supports') != -1: # Fix for downloaded chrome update
+                    console_log('Downloaded Google Chrome update is detected! Using new chrome executable file!', INFO)
+                    browser_path = traceback.format_exc().split('path')[-1].split('Stacktrace')[0].strip()
+                    if 'new_chrome.exe' in os.listdir(browser_path[:-10]):
+                        browser_path = browser_path[:-10]+'new_chrome.exe'
+                        driver_options.binary_location = browser_path
+                        driver = Chrome(options=driver_options, service=ChromeService(executable_path=webdriver_path))
+                else:
+                  raise E
         elif browser_name.lower() == 'firefox':
             driver_options = FirefoxOptions()
             driver_options.binary_location = browser_path
@@ -360,6 +481,14 @@ class SharedTools(object):
                         activated_href = email_obj.get_message(message['id'])['body']
                     elif message['from'].find('product.eset.com') != -1:
                         activated_href = email_obj.get_message(message['id'])['body']
+            elif args['email_api'] == 'developermail':
+                messages = email_obj.get_messages()
+                if messages is not None:
+                    message = messages[-1]
+                    if eset_business and message['subject'].find('activation') != -1:
+                        activated_href = message['body']
+                    elif message['from'].find('product.eset.com') != -1:
+                        activated_href = message['body']
             elif args['email_api'] == 'hi2in':
                 email_obj.open_inbox()
                 try:
@@ -369,7 +498,7 @@ class SharedTools(object):
                         activated_href = driver.find_element('xpath', "//a[starts-with(@href, 'https://login.eset.com')]").get_attribute('href')
                 except:
                     pass
-            elif args['email_api'] == '10minutemail':
+            elif args['email_api'] in ['10minutemail', 'guerrillamail']:
                 inbox = email_obj.parse_inbox()
                 for mail in inbox:
                     mail_id, mail_from, mail_subject = mail
@@ -400,8 +529,8 @@ class SharedTools(object):
         raise RuntimeError('Token retrieval error!!!')
 
 class WebDriverInstaller(object):
-    def __init__(self):
-        self.platform = ['', []]
+    def __init__(self, for_firefox=False):
+        self.platform = ['', []] # [OC name, [webdriver architectures]]
         if sys.platform.startswith('win'):
             self.platform[0] = 'win'
             if sys.maxsize > 2**32:
@@ -416,9 +545,11 @@ class WebDriverInstaller(object):
                 self.platform[1].append('linux32')
         elif sys.platform == "darwin":
             self.platform[0] = 'mac'
-            if processor() == "arm":
+            if for_firefox:
+                self.platform[1] = ['macos']
+            elif platform.processor() == "arm":
                 self.platform[1] = ['mac-arm64', 'mac_arm64', 'mac64_m1']
-            elif processor() == "i386":
+            elif platform.processor() == "i386":
                 self.platform[1] = ['mac64', 'mac-x64']
         if self.platform[0] == '' or self.platform[1] == []:
             raise RuntimeError('WebDriverInstaller: impossible to define the system!')
@@ -453,7 +584,7 @@ class WebDriverInstaller(object):
         if chrome_version is not None:
             chrome_version = [chrome_version]+chrome_version.split('.') # [full, major, _, minor, micro]
         else:
-            raise RuntimeError('WebDriverInstaller: google chrome is not detected installed on your device!')
+            raise RuntimeError('WebDriverInstaller: Google Chrome is not detected installed on your device!')
         return chrome_version
 
     def get_chromedriver_download_url(self, chrome_major_version=None):
@@ -472,7 +603,7 @@ class WebDriverInstaller(object):
         else: # for old drivers ( [..., 115.0.0000.0) )
             latest_old_driver_version = requests.get('https://chromedriver.storage.googleapis.com/LATEST_RELEASE_{0}'.format(chrome_major_version))
             if latest_old_driver_version.status_code != 200:
-                raise RuntimeError('WebDriverInstaller: the required chrome driver was not found!')
+                raise RuntimeError('WebDriverInstaller: the required chrome-webdriver was not found!')
             latest_old_driver_version = latest_old_driver_version.text
             driver_url = 'https://chromedriver.storage.googleapis.com/{0}/chromedriver_'.format(latest_old_driver_version)
             for arch in self.platform[1]:
@@ -480,31 +611,59 @@ class WebDriverInstaller(object):
                 driver_size = requests.head(current_driver_url).headers.get('x-goog-stored-content-length', None)
                 if driver_size is not None and int(driver_size) > 1024**2:
                     return current_driver_url
-            raise RuntimeError('WebDriverInstaller: the required chrome driver was not found!')
+            raise RuntimeError('WebDriverInstaller: the required chrome-webdriver was not found!')
     
-    def download_webdriver(self, path: str, url=None, edge=False): # Only for Google Chrome (default) and Microsoft Edge (edge=True)
+    def get_latest_geckodriver_download_url(self, only_version=False):
+        r = requests.get("https://api.github.com/repos/mozilla/geckodriver/releases/latest")
+        r_json = r.json()
+        # note for: r_json['assets'][::-1]
+        # in the initialization of WebDriverInstaller for 64bit is also suitable for 32bit, but
+        # in the list of assets first go 32bit and it comes out that for 64bit gives a 32bit release, turning the list fixes it
+        if only_version:
+            return r_json['name']
+        for asset in r_json['assets'][::-1]:
+            if asset['name'].find('asc') == -1: # ignoring GPG Keys
+                asset_arch = asset['name'].split('-', 2)[-1].split('.')[0] # package architecture parsing; geckodriver-v0.34.0-win32.zip -> ['geckodriver', 'v0.34.0', 'win32.zip'] -> ['win32', 'zip'] -> win32
+                if asset_arch in self.platform[1]:
+                    return asset['browser_download_url']
+
+    def download_webdriver(self, path='.', url=None, edge=False, firefox=False):
+        file_extension = '.zip'
         if url is None:
             if edge:
                 url = self.get_edgedriver_download_url()
+            elif firefox:
+                url = self.get_latest_geckodriver_download_url()
             else:
                 url = self.get_chromedriver_download_url()
-        zip_path = path.replace('\\', '/')+'/data.zip'
+        if url.find('.tar.gz') != -1:
+            file_extension = '.tar.gz'
+        # downloading
+        zip_path = path.replace('\\', '/')+'/data'+file_extension
         f = open(zip_path, 'wb')
         f.write(requests.get(url).content)
         f.close()
         if edge:
             webdriver_name = 'msedgedriver' # macOS, linux
+        elif firefox:
+            webdriver_name = 'geckodriver' # macOS, linux
         else:
             webdriver_name = 'chromedriver' # macOS, linux
         if self.platform[0].startswith('win'): # windows
             webdriver_name += '.exe'
-        with zipfile.ZipFile(zip_path, 'r') as zip:
-            webdriver_zip_path = ''
-            if not edge:
-                if len(zip.namelist()[0].split('/')) > 1: # for new Google Chrome webdriver zip format 
-                    webdriver_zip_path = zip.namelist()[0].split('/')[0]+'/'
-            with open(path+'/'+webdriver_name, 'wb') as f:
-                f.write(zip.read(webdriver_zip_path+webdriver_name))
+        # extracting
+        if file_extension == '.zip':
+            with zipfile.ZipFile(zip_path, 'r') as zip:
+                webdriver_zip_path = ''
+                if not edge and not firefox: # Google Chrome
+                    if len(zip.namelist()[0].split('/')) > 1: # for new Google Chrome webdriver zip format 
+                        webdriver_zip_path = zip.namelist()[0].split('/')[0]+'/'
+                with open(path+'/'+webdriver_name, 'wb') as f: # for Google Chrome and Microsoft Edge
+                    f.write(zip.read(webdriver_zip_path+webdriver_name))
+        elif file_extension == '.tar.gz':
+            tar = tarfile.open(zip_path)
+            tar.extractall()
+            tar.close()
         try:
             os.remove(zip_path)
         except:
@@ -512,13 +671,27 @@ class WebDriverInstaller(object):
         return True
     
     def get_edge_version(self): # Only for windows
-        cmd = 'powershell -Command "Get-ItemPropertyValue -Path "HKCU:\\SOFTWARE\\Microsoft\\Edge\\BLBeacon" -Name "version""'
         edge_version = None
-        try:
-            edge_version = subprocess.check_output(cmd, stderr=subprocess.DEVNULL).decode('utf-8').strip()
-            edge_version = [edge_version]+edge_version.split('.') # [full, major, _, minor, micro]
-        except:
-            raise RuntimeError('WebDriverInstaller: microsoft edge is not detected installed on your device!')
+        paths = [
+            'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+            'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
+        ]
+        for path in paths:
+            if not os.path.exists(path):
+                continue
+            f = open(path, 'rb')
+            for line in f.readlines()[::-1]:
+                if line.find(b'" version="') != -1:
+                    # <assemblyIdentity type="win32" name="124.0.2478.80" version="124.0.2478.80" language="*"/> ->
+                    # ['<assemblyIdentity type="win32" name="124.0.2478.80" version', '="124.0.2478.80" language="*"/>'] ->
+                    # ="124.0.2478.80" language="*"/> -> ['="', '124.0.2478.80', '" language="*"/>']
+                    # 124.0.2478.80
+                    edge_version = str(line).split('version')[-1].split('"')[1]
+                    edge_version = [edge_version]+edge_version.split('.')
+                    break
+            f.close()
+        if edge_version is None:
+            raise RuntimeError('WebDriverInstaller: Microsoft Edge is not detected installed on your device!')
         return edge_version
 
     def get_edgedriver_download_url(self, edge_version=None):
@@ -526,60 +699,86 @@ class WebDriverInstaller(object):
         if edge_version is None:
             edge_version = self.get_edge_version()
         driver_url = 'https://msedgedriver.azureedge.net/{0}/edgedriver_'.format(edge_version[0])
+        if requests.head(driver_url+'win32.zip').status_code != 200:
+            console_log('Webdriver with identical version as the browser is not detected!!!', ERROR)
+            console_log('Script runs an advanced search for a suitable webdriver...', INFO)
+            for i in range(0, 150):
+                tmp_edge_version = edge_version
+                tmp_edge_version[-1] = str(i)
+                tmp_edge_version = '.'.join(tmp_edge_version[1:])
+                if requests.head(f'https://msedgedriver.azureedge.net/{tmp_edge_version}/edgedriver_win32.zip').status_code == 200:
+                    # console_log('Another suitable version has been found!', OK)
+                    driver_url = 'https://msedgedriver.azureedge.net/{0}/edgedriver_'.format(tmp_edge_version)
+                    break
         for arch in archs:
             current_driver_url = driver_url+arch+'.zip'
             driver_size = requests.head(current_driver_url).headers.get('Content-Length', None)
             if driver_size is not None and int(driver_size) > 1024**2:
                 return current_driver_url
-        raise RuntimeError('WebDriverInstaller: the required chrome driver was not found!')
+        raise RuntimeError('WebDriverInstaller: the required edge-webdriver was not found!')
             
-    def webdriver_installer_menu(self, edge=False): # auto updating or installing google chrome or microsoft edge webdrivers
+    def webdriver_installer_menu(self, edge=False, firefox=False): # auto updating or installing webdrivers
         if edge:
             browser_name = 'Microsoft Edge'
+        elif firefox:
+            browser_name = 'Mozilla Firefox'
         else:
             browser_name = 'Google Chrome'
         console_log('-- WebDriver Auto-Installer --\n'.format(browser_name))
         if edge:
             browser_version = self.get_edge_version()
+        elif firefox:
+            browser_version = ['Ignored', 'Ignored']
         else:
             browser_version = self.get_chrome_version()
         current_webdriver_version = None
         if edge:
             webdriver_name = 'msedgedriver'
+        elif firefox:
+            webdriver_name = 'geckodriver'
         else:
             webdriver_name = 'chromedriver'
         if self.platform[0] == 'win':
             webdriver_name += '.exe'
+        webdriver_path = None
         if os.path.exists(webdriver_name):
             os.chmod(webdriver_name, 0o777)
             out = subprocess.check_output([os.path.join(os.getcwd(), webdriver_name), "--version"], stderr=subprocess.PIPE)
             if out is not None:
                 if edge:
                     current_webdriver_version = out.decode("utf-8").split(' ')[3]
-                else:
+                else: 
                     current_webdriver_version = out.decode("utf-8").split(' ')[1]
         console_log('{0} version: {1}'.format(browser_name, browser_version[0]), INFO, False)
         console_log('{0} webdriver version: {1}'.format(browser_name, current_webdriver_version), INFO, False)
-        webdriver_path = None
+        if firefox:
+            latest_geckodriver_version = self.get_latest_geckodriver_download_url(True)
+            if current_webdriver_version == latest_geckodriver_version:
+                console_log('The webdriver has already been updated to the latest version!\n', OK)
+                return os.path.join(os.getcwd(), webdriver_name)
+            elif current_webdriver_version is not None:
+                console_log(f'Updating the webdriver from {current_webdriver_version} to {latest_geckodriver_version} version...', INFO)
         if current_webdriver_version is None:
             console_log('{0} webdriver not detected, download attempt...'.format(browser_name), INFO)
-        elif current_webdriver_version.split('.')[0] != browser_version[1]: # major version match
+        elif current_webdriver_version.split('.')[0] != browser_version[1] and not firefox: # major version match
             console_log('{0} webdriver version doesn\'t match version of the installed {1}, trying to update...'.format(browser_name, browser_name), ERROR)
-        if current_webdriver_version is None or current_webdriver_version.split('.')[0] != browser_version[1]:
+        if (current_webdriver_version is None or current_webdriver_version.split('.')[0] != browser_version[1]) or firefox:
             if edge:
                 driver_url = self.get_edgedriver_download_url()
+            elif firefox:
+                driver_url = self.get_latest_geckodriver_download_url()
             else:
                 driver_url = self.get_chromedriver_download_url()
             if driver_url is not None:
                 console_log('\nFound a suitable version for your system!', OK)
                 console_log('Downloading...', INFO)
-                if self.download_webdriver('.', driver_url, edge):
+                if self.download_webdriver('.', driver_url, edge, firefox):
                     console_log('{0} webdriver was successfully downloaded and unzipped!\n'.format(browser_name), OK)
                     webdriver_path = os.path.join(os.getcwd(), webdriver_name)
                 else:
                     console_log('Error downloading or unpacking!\n', ERROR)
         else:
-            console_log('The driver has already been updated to the browser version!\n', OK)
+            console_log('The webdriver has already been updated to the browser version!\n', OK)
             webdriver_path = os.path.join(os.getcwd(), webdriver_name)
         return webdriver_path
 
@@ -595,7 +794,7 @@ class EsetRegister(object):
         uCE = SharedTools.untilConditionExecute
 
         console_log('\n[EMAIL] Register page loading...', INFO)
-        if args['email_api'] in ['hi2in', '10minutemail', 'tempmail']:
+        if args['email_api'] in ['hi2in', '10minutemail', 'tempmail', 'guerrillamail']:
             self.driver.switch_to.new_window('EsetRegister')
             self.window_handle = self.driver.current_window_handle
         self.driver.get('https://login.eset.com/Register')
@@ -637,16 +836,17 @@ class EsetRegister(object):
 
     def confirmAccount(self):
         uCE = SharedTools.untilConditionExecute
+        #uCE(self.driver, f'return {CLICK_WITH_BOOL}({GET_EBAV}("ion-button", "data-r", "account-verification-email-modal-resend-email-btn"))') # accelerating the receipt of an eset token
         
         if args['custom_email_api']:
             token = SharedTools.parseToken(self.email_obj, max_iter=100, delay=3)
         else:
             console_log(f'\n[{args["email_api"]}] ESET-Token interception...', INFO)
-            if args['email_api'] in ['hi2in', '10minutemail', 'tempmail']:
+            if args['email_api'] in ['hi2in', '10minutemail', 'tempmail', 'guerrillamail']:
                 token = SharedTools.parseToken(self.email_obj, self.driver, max_iter=100, delay=3)
                 self.driver.switch_to.window(self.window_handle)
             else:
-                token = SharedTools.parseToken(self.email_obj, max_iter=100, delay=3) # 1secmail
+                token = SharedTools.parseToken(self.email_obj, max_iter=100, delay=3) # 1secmail, developermail
         console_log(f'ESET-Token: {token}', OK)
         console_log('\nAccount confirmation is in progress...', INFO)
         self.driver.get(f'https://login.eset.com/link/confirmregistration?token={token}')
@@ -725,7 +925,7 @@ class EsetBusinessRegister(object):
         uCE = SharedTools.untilConditionExecute
         # STEP 0
         console_log('\nLoading EBA-ESET Page...', INFO)
-        if args['email_api'] in ['hi2in', '10minutemail', 'tempmail']:
+        if args['email_api'] in ['hi2in', '10minutemail', 'tempmail', 'guerrillamail']:
             self.driver.switch_to.new_window('EsetBusinessRegister')
             self.window_handle = self.driver.current_window_handle
         self.driver.get('https://eba.eset.com/Account/Register?culture=en-US')
@@ -784,11 +984,11 @@ class EsetBusinessRegister(object):
             token = SharedTools.parseToken(self.email_obj, max_iter=100, delay=3)
         else:
             console_log(f'\n[{args["email_api"]}] EBA-ESET-Token interception...', INFO)
-            if args['email_api'] in ['hi2in', '10minutemail', 'tempmail']:
+            if args['email_api'] in ['hi2in', '10minutemail', 'tempmail', 'guerrillamail']:
                 token = SharedTools.parseToken(self.email_obj, self.driver, True, max_iter=100, delay=3)
                 self.driver.switch_to.window(self.window_handle)
             else:
-                token = SharedTools.parseToken(self.email_obj, eset_business=True, max_iter=100, delay=3) # 1secmail
+                token = SharedTools.parseToken(self.email_obj, eset_business=True, max_iter=100, delay=3) # 1secmail, developermail
         console_log(f'EBA-ESET-Token: {token}', OK)
         console_log('\nAccount confirmation is in progress...', INFO)
         self.driver.get(f'https://eba.eset.com/Account/InitActivation?token={token}')
@@ -871,8 +1071,9 @@ if __name__ == '__main__':
     args_parser.add_argument('--skip-webdriver-menu', action='store_true', help='Skips installation/upgrade webdrivers through the my custom wrapper (The built-in selenium-manager will be used)')
     args_parser.add_argument('--no-headless', action='store_true', help='Shows the browser at runtime (The browser is hidden by default, but on Windows 7 this option is enabled by itself)')
     args_parser.add_argument('--custom-browser-location', type=str, default='', help='Set path to the custom browser (to the binary file, useful when using non-standard releases, for example, Firefox Developer Edition)')
-    args_parser.add_argument('--email-api', choices=['1secmail', 'hi2in', '10minutemail', 'tempmail'], default='1secmail', help='Specify which api to use for mail')
+    args_parser.add_argument('--email-api', choices=['1secmail', 'hi2in', '10minutemail', 'tempmail', 'guerrillamail', 'developermail'], default='developermail', help='Specify which api to use for mail')
     args_parser.add_argument('--custom-email-api', action='store_true', help='Allows you to manually specify any email, and all work will go through it. But you will also have to manually read inbox and do what is described in the documentation for this argument')
+    args_parser.add_argument('--try-auto-cloudflare',action='store_true', help='Removes the prompt for the user to press Enter when solving cloudflare captcha. In some cases it may go through automatically, which will give the opportunity to use tempmail in automatic mode!')
     try:
         try:
             args = vars(args_parser.parse_args())
@@ -885,7 +1086,7 @@ if __name__ == '__main__':
         # changing input arguments for special cases
         if platform.release() == '7' and webdriver_installer.platform[0] == 'win': # fix for Windows 7
             args['no_headless'] = True
-        elif args['business_account'] or args['business_key'] or args['email_api'] == 'tempmail':
+        elif args['business_account'] or args['business_key'] or args['email_api'] in ['tempmail']:
             args['no_headless'] = True
         
         driver = None
@@ -895,8 +1096,8 @@ if __name__ == '__main__':
             browser_name = 'firefox'
         if args['edge']:
             browser_name = 'edge'
-        if not args['skip_webdriver_menu'] and browser_name != 'firefox': # updating or installing microsoft edge webdriver
-            webdriver_path = webdriver_installer.webdriver_installer_menu(args['edge'])
+        if not args['skip_webdriver_menu']: # updating or installing webdriver
+            webdriver_path = webdriver_installer.webdriver_installer_menu(args['edge'], args['firefox'])
             if webdriver_path is not None:
                 os.chmod(webdriver_path, 0o777)
         if not args['only_update']:
@@ -913,7 +1114,11 @@ if __name__ == '__main__':
                 email_obj = Hi2inAPI(driver)
             elif args['email_api'] == 'tempmail':
                 email_obj = TempMailAPI(driver)
-            else:
+            elif args['email_api'] == 'guerrillamail':
+                email_obj = GuerRillaMailAPI(driver)
+            elif args['email_api'] == 'developermail':
+                email_obj = DeveloperMailAPI()
+            elif args['email_api'] == '1secmail':
                 email_obj = SecEmailAPI()
             email_obj.init()
             console_log('Mail registration completed successfully!', OK)
@@ -922,7 +1127,7 @@ if __name__ == '__main__':
             while True:
                 email = input(f'\n[  {Fore.YELLOW}INPT{Fore.RESET}  ] {Fore.CYAN}Enter the email address you have access to: {Fore.RESET}').strip()
                 try:
-                    matched_email = re.match(r"[a-z0-9]+@[a-z]+\.[a-z]{2,3}", email).group()
+                    matched_email = re.match(r"[-a-z0-9+]+@[a-z]+\.[a-z]{2,3}", email).group()
                     if matched_email == email:
                         email_obj.email = matched_email
                         console_log('Mail has the correct syntax!', OK)
@@ -938,29 +1143,64 @@ if __name__ == '__main__':
             EsetReg = EsetRegister(email_obj, eset_password, driver)
             EsetReg.createAccount()
             EsetReg.confirmAccount()
-            output_line = f'\nEmail: {email_obj.email}\nPassword: {eset_password}\n'
+            output_line = '\n'.join([
+                    '',
+                    '----------------------------------',
+                    f'Account Email: {email_obj.email}',
+                    f'Account Password: {eset_password}',
+                    '----------------------------------',
+                    ''
+            ])        
             output_filename = 'ESET ACCOUNTS.txt'
             if args['key']:
                 output_filename = 'ESET KEYS.txt'
                 EsetKeyG = EsetKeygen(email_obj, driver)
                 EsetKeyG.sendRequestForKey()
                 license_name, license_key, license_out_date = EsetKeyG.getLicenseData()
-                output_line = f'\nLicense Name: {license_name}\nLicense Key: {license_key}\nLicense Out Date: {license_out_date}\n'
-        
+                output_line = '\n'.join([
+                    '',
+                    '----------------------------------',
+                    f'Account Email: {email_obj.email}',
+                    f'Account Password: {eset_password}',
+                    '',
+                    f'License Name: {license_name}',
+                    f'License Key: {license_key}',
+                    f'License Out Date: {license_out_date}',
+                    '----------------------------------',
+                    ''
+                ])
+                
         # new generator
         elif args['business_account'] or args['business_key']:
             EsetBusinessReg = EsetBusinessRegister(email_obj, eset_password, driver)
             EsetBusinessReg.createAccount()
             EsetBusinessReg.confirmAccount()
-            output_line = f'\nBusiness-Email: {email_obj.email}\nBusiness-Password: {eset_password}\n'
+            output_line = '\n'.join([
+                    '',
+                    '----------------------------------',
+                    f'Business Account Email: {email_obj.email}',
+                    f'Business Account Password: {eset_password}',
+                    '----------------------------------',
+                    ''
+            ])    
             output_filename = 'ESET ACCOUNTS.txt'
             if args['business_key']:
                 output_filename = 'ESET KEYS.txt'
                 EsetBusinessKeyG = EsetBusinessKeygen(email_obj, eset_password, driver)
                 EsetBusinessKeyG.sendRequestForKey()
                 license_name, license_key, license_out_date = EsetBusinessKeyG.getLicenseData()
-                output_line = f'\nLicense Name: {license_name}\nLicense Key: {license_key}\nLicense Out Date: {license_out_date}\n'
-        
+                output_line = '\n'.join([
+                    '',
+                    '----------------------------------',
+                    f'Business Account Email: {email_obj.email}',
+                    f'Business Account Password: {eset_password}',
+                    '',
+                    f'License Name: {license_name}',
+                    f'License Key: {license_key}',
+                    f'License Out Date: {license_out_date}',
+                    '----------------------------------',
+                    ''
+                ])        
         # end
         console_log(output_line)
         date = datetime.datetime.now()
